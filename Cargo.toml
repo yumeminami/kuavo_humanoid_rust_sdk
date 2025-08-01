@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { version = "1.39.0", features = ["full"] }
 anyhow = "1"
 rosrust = "0.9"
 rosrust_msg = "0.1"
+
+# tokio may be needed for async operations in the future
+# tokio = { version = "1.39.0", features = ["full"] }
