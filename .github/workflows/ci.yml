@@ -148,7 +148,7 @@ jobs:
 
       - name: "Clippy"
         run: |
-          source /opt/ros/noetic/setup.bash
+          . /opt/ros/noetic/setup.bash
           cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
   cargo-shear:
@@ -206,7 +206,7 @@ jobs:
           # Retry more than default to reduce flakes in CI
           UV_HTTP_RETRIES: 5
         run: |
-          source /opt/ros/noetic/setup.bash
+          . /opt/ros/noetic/setup.bash
           cargo nextest run \
             --workspace \
             --status-level skip --failure-output immediate-final --no-fail-fast -j 20 --final-status-level slow
@@ -232,7 +232,7 @@ jobs:
 
       - name: "Build"
         run: |
-          source /opt/ros/noetic/setup.bash
+          . /opt/ros/noetic/setup.bash
           cargo build
 
       - name: "Upload binary"
@@ -268,7 +268,7 @@ jobs:
 
       - name: "Build"
         run: |
-          source /opt/ros/noetic/setup.bash
+          . /opt/ros/noetic/setup.bash
           cargo build --target aarch64-unknown-linux-gnu
 
       - name: "Upload binary"
@@ -306,7 +306,7 @@ jobs:
 
       - name: "Build"
         run: |
-          source /opt/ros/noetic/setup.bash
+          . /opt/ros/noetic/setup.bash
           cargo build --target x86_64-unknown-linux-musl --bin uv --bin uvx
 
       - name: "Upload binary"
