@@ -1,0 +1,10 @@
+[package]
+name = "kuavo_humanoid_rust_sdk"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.39.0", features = ["full"] }
+anyhow = "1"
+rosrust = "0.9"
+rosrust_msg = "0.1"
