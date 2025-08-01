@@ -1,0 +1,25 @@
+services:
+  kuavo_humanoid_rust_sdk:
+    container_name: kuavo_humanoid_rust_sdk
+    image: rongmanfeng/ros1_noetic:0.1
+    network_mode: host
+    privileged: true
+    stdin_open: true
+    tty: true
+    environment:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      - /dev:/dev
+      - ~/.ros:/root/.ros
+      - ~/.tls:/root/.tls
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./:/root/kuavo_humanoid_rust_sdk
+    group_add:
+      - dialout
+    ulimits:
+      rtprio:
+        soft: 99
+        hard: 99
+    cap_add:
+      - SYS_NICE
+    working_dir: /root/kuavo_humanoid_rust_sdk
