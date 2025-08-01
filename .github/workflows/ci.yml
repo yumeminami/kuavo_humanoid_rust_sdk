@@ -1,0 +1,329 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  CARGO_TERM_COLOR: always
+  PYTHON_VERSION: "3.12"
+  RUSTUP_MAX_RETRIES: 10
+  RUST_BACKTRACE: 1
+
+jobs:
+  determine_changes:
+    name: "Determine changes"
+    runs-on: ubuntu-latest
+    outputs:
+      # Flag that is raised when any code is changed
+      code: ${{ steps.changed.outputs.code_any_changed }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: "Determine changed files"
+        id: changed
+        shell: bash
+        run: |
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha || 'origin/main' }}...HEAD)
+
+          CODE_CHANGED=false
+
+          while IFS= read -r file; do
+            # Generated markdown and JSON files are checked during test runs.
+            if [[ "${file}" =~ ^docs/ && ! "${file}" =~ ^docs/reference/(cli|settings).md && ! "${file}" =~ ^docs/reference/environment.md ]]; then
+              echo "Skipping ${file} (matches docs/ pattern)"
+              continue
+            fi
+            if [[ "${file}" =~ ^mkdocs.*\.yml$ ]]; then
+              echo "Skipping ${file} (matches mkdocs*.yml pattern)"
+              continue
+            fi
+            if [[ "${file}" =~ \.md$ ]]; then
+              echo "Skipping ${file} (matches *.md pattern)"
+              continue
+            fi
+            if [[ "${file}" =~ ^bin/ ]]; then
+              echo "Skipping ${file} (matches bin/ pattern)"
+              continue
+            fi
+            if [[ "${file}" =~ ^assets/ ]]; then
+              echo "Skipping ${file} (matches assets/ pattern)"
+              continue
+            fi
+
+            echo "Detected code change in: ${file}"
+            CODE_CHANGED=true
+            break
+
+          done <<< "${CHANGED_FILES}"
+          echo "code_any_changed=${CODE_CHANGED}" >> "${GITHUB_OUTPUT}"
+
+  lint:
+    timeout-minutes: 10
+    name: "lint"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: 3.12
+
+      - name: "Install Rustfmt"
+        run: rustup component add rustfmt
+
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@7edac99f961f18b581bbd960d59d049f04c0002f # v6.4.1
+
+      - name: "rustfmt"
+        run: cargo fmt --all --check
+
+      - name: "Prettier"
+        run: |
+          npx prettier --check "**/*.{json5,yaml,yml}"
+          npx prettier --prose-wrap always --check "**/*.md"
+
+      - name: "README check"
+        run: python scripts/transform_readme.py --target pypi
+
+      - name: "Python format"
+        run: uvx ruff format --diff .
+
+      - name: "Python lint"
+        run: uvx ruff check .
+
+      - name: "Python type check"
+        run: uvx mypy
+
+      - name: "Validate project metadata"
+        run: uvx --from 'validate-pyproject[all,store]' validate-pyproject pyproject.toml
+
+      - name: "Lint shell scripts"
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        env:
+          # renovate: datasource=github-tags depName=koalaman/shellcheck
+          SHELLCHECK_VERSION: "v0.10.0"
+          SHELLCHECK_OPTS: --shell bash
+        with:
+          version: ${{ env.SHELLCHECK_VERSION }}
+          severity: style
+          check_together: "yes"
+
+  cargo-clippy:
+    timeout-minutes: 15
+    needs: determine_changes
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-test') && (needs.determine_changes.outputs.code == 'true' || github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:focal
+    name: "cargo clippy | ubuntu"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup ROS environment
+        uses: ros-tooling/setup-ros@v0.7.15
+        with:
+          required-ros-distributions: noetic
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: "Check uv_build dependencies"
+        uses: EmbarkStudios/cargo-deny-action@30f817c6f72275c6d54dc744fbca09ebc958599f # v2.0.12
+        with:
+          command: check bans
+          manifest-path: crates/uv-build/Cargo.toml
+
+      - name: "Install Rust toolchain"
+        run: rustup component add clippy
+
+      - name: "Clippy"
+        run: |
+          source /opt/ros/noetic/setup.bash
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+  cargo-dev-generate-all:
+    timeout-minutes: 10
+    needs: determine_changes
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-test') && (needs.determine_changes.outputs.code == 'true' || github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    name: "cargo dev generate-all"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: "Generate all"
+        run: cargo dev generate-all --mode check
+
+  cargo-shear:
+    timeout-minutes: 10
+    name: "cargo shear"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: "Install cargo shear"
+        uses: taiki-e/install-action@c99cc51b309eee71a866715cfa08c922f11cf898 # v2.56.19
+        with:
+          tool: cargo-shear
+      - run: cargo shear
+
+  cargo-test-linux:
+    timeout-minutes: 20
+    needs: determine_changes
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-test') && (needs.determine_changes.outputs.code == 'true' || github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:focal
+    name: "cargo test | ubuntu"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup ROS environment
+        uses: ros-tooling/setup-ros@v0.7.15
+        with:
+          required-ros-distributions: noetic
+
+      - uses: rui314/setup-mold@v1
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+
+      - name: "Install Rust toolchain"
+        run: rustup show
+
+      - uses: astral-sh/setup-uv@7edac99f961f18b581bbd960d59d049f04c0002f # v6.4.1
+      - name: "Install required Python versions"
+        run: uv python install
+
+      - name: "Install cargo nextest"
+        uses: taiki-e/install-action@c99cc51b309eee71a866715cfa08c922f11cf898 # v2.56.19
+        with:
+          tool: cargo-nextest
+
+      - name: "Cargo test"
+        env:
+          # Retry more than default to reduce flakes in CI
+          UV_HTTP_RETRIES: 5
+        run: |
+          source /opt/ros/noetic/setup.bash
+          cargo nextest run \
+            --workspace \
+            --status-level skip --failure-output immediate-final --no-fail-fast -j 20 --final-status-level slow
+
+  build-binary-linux-x86_64:
+    timeout-minutes: 15
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:focal
+    name: "build binary | linux x86_64"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup ROS environment
+        uses: ros-tooling/setup-ros@v0.7.15
+        with:
+          required-ros-distributions: noetic
+
+      - uses: rui314/setup-mold@v1
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+
+      - name: "Build"
+        run: |
+          source /opt/ros/noetic/setup.bash
+          cargo build
+
+      - name: "Upload binary"
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: uv-linux-x86_64-${{ github.ref_name }}
+          path: |
+            ./target/debug/uv
+            ./target/debug/uvx
+          retention-days: 30
+
+  build-binary-linux-aarch64:
+    timeout-minutes: 15
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:focal
+    name: "build binary | linux aarch64"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup ROS environment
+        uses: ros-tooling/setup-ros@v0.7.15
+        with:
+          required-ros-distributions: noetic
+
+      - uses: rui314/setup-mold@v1
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+
+      - name: "Setup aarch64 target"
+        run: rustup target add aarch64-unknown-linux-gnu
+
+      - name: "Build"
+        run: |
+          source /opt/ros/noetic/setup.bash
+          cargo build --target aarch64-unknown-linux-gnu
+
+      - name: "Upload binary"
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: uv-linux-aarch64-${{ github.ref_name }}
+          path: |
+            ./target/aarch64-unknown-linux-gnu/debug/uv
+            ./target/aarch64-unknown-linux-gnu/debug/uvx
+          retention-days: 30
+
+  build-binary-linux-musl:
+    timeout-minutes: 15
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:focal
+    name: "build binary | linux musl"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup ROS environment
+        uses: ros-tooling/setup-ros@v0.7.15
+        with:
+          required-ros-distributions: noetic
+
+      - uses: rui314/setup-mold@v1
+
+      - name: "Setup musl"
+        run: |
+          sudo apt-get install musl-tools
+          rustup target add x86_64-unknown-linux-musl
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+
+      - name: "Build"
+        run: |
+          source /opt/ros/noetic/setup.bash
+          cargo build --target x86_64-unknown-linux-musl --bin uv --bin uvx
+
+      - name: "Upload binary"
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: uv-linux-musl-${{ github.ref_name }}
+          path: |
+            ./target/x86_64-unknown-linux-musl/debug/uv
+            ./target/x86_64-unknown-linux-musl/debug/uvx
+          retention-days: 30
