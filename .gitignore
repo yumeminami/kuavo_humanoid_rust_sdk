@@ -1,3 +1,7 @@
 /target
 .gitlab-ci.yml
 node_modules
+build
+devel
+.catkin_workspace
+kuavo_ws/src/CMakeLists.txt

@@ -1,0 +1,22 @@
+name: "Setup ROS Workspace Environment"
+description: "Initialize ROS workspace and install dependencies"
+runs:
+  using: "composite"
+  steps:
+    - name: "Initialize rosdep"
+      shell: sh
+      run: |
+        . /opt/ros/noetic/setup.sh
+        if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
+          sudo rosdep init
+        fi
+        rosdep update --rosdistro noetic
+
+    - name: "Install ROS dependencies and build workspace"
+      shell: sh
+      run: |
+        if [ -d "kuavo_ws/src" ]; then
+          cd kuavo_ws
+          rosdep install --from-paths src --ignore-src -r -y
+          catkin_make
+        fi

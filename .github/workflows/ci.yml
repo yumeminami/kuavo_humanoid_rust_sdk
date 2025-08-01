@@ -133,6 +133,9 @@ jobs:
       - name: apt install dependencies
         run: apt-get install -y wget
 
+      - name: Setup ROS Workspace Environment
+        uses: ./.github/actions/setup-ros-workspace
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       # - name: Setup ROS environment
       #   uses: ros-tooling/setup-ros@v0.7
@@ -149,6 +152,7 @@ jobs:
       - name: "Clippy"
         run: |
           . /opt/ros/noetic/setup.sh
+          [ -f kuavo_ws/devel/setup.sh ] && . kuavo_ws/devel/setup.sh
           cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
   cargo-shear:
@@ -184,6 +188,9 @@ jobs:
       - name: apt install dependencies
         run: apt-get install -y wget
 
+      - name: Setup ROS Workspace Environment
+        uses: ./.github/actions/setup-ros-workspace
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: rui314/setup-mold@v1
 
@@ -207,6 +214,7 @@ jobs:
           UV_HTTP_RETRIES: 5
         run: |
           . /opt/ros/noetic/setup.sh
+          [ -f kuavo_ws/devel/setup.sh ] && . kuavo_ws/devel/setup.sh
           cargo nextest run \
             --workspace \
             --status-level skip --failure-output immediate-final --no-fail-fast -j 20 --final-status-level slow --no-tests pass
@@ -221,10 +229,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Setup ROS environment
-        uses: ros-tooling/setup-ros@v0.7
-        with:
-          required-ros-distributions: noetic
+      - name: Setup ROS Workspace Environment
+        uses: ./.github/actions/setup-ros-workspace
 
       - uses: rui314/setup-mold@v1
 
@@ -233,6 +239,7 @@ jobs:
       - name: "Build"
         run: |
           . /opt/ros/noetic/setup.sh
+          [ -f kuavo_ws/devel/setup.sh ] && . kuavo_ws/devel/setup.sh
           cargo build
 
       - name: "Upload binary"
@@ -254,6 +261,9 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Setup ROS Workspace Environment
+        uses: ./.github/actions/setup-ros-workspace
+
       - uses: rui314/setup-mold@v1
 
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
@@ -264,6 +274,7 @@ jobs:
       - name: "Build"
         run: |
           . /opt/ros/noetic/setup.sh
+          [ -f kuavo_ws/devel/setup.sh ] && . kuavo_ws/devel/setup.sh
           cargo build --target aarch64-unknown-linux-gnu
 
       - name: "Upload binary"
@@ -285,6 +296,9 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Setup ROS Workspace Environment
+        uses: ./.github/actions/setup-ros-workspace
+
       - uses: rui314/setup-mold@v1
 
       - name: "Setup musl"
@@ -297,6 +311,7 @@ jobs:
       - name: "Build"
         run: |
           . /opt/ros/noetic/setup.sh
+          [ -f kuavo_ws/devel/setup.sh ] && . kuavo_ws/devel/setup.sh
           cargo build --target x86_64-unknown-linux-musl
 
       - name: "Upload binary"
