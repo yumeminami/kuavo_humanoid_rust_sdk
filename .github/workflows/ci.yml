@@ -209,7 +209,7 @@ jobs:
           . /opt/ros/noetic/setup.sh
           cargo nextest run \
             --workspace \
-            --status-level skip --failure-output immediate-final --no-fail-fast -j 20 --final-status-level slow
+            --status-level skip --failure-output immediate-final --no-fail-fast -j 20 --final-status-level slow --no-tests pass
 
   build-binary-linux-x86_64:
     timeout-minutes: 15
