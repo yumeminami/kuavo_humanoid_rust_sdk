@@ -100,7 +100,7 @@ jobs:
         run: uvx ruff check .
 
       - name: "Python type check"
-        run: uvx mypy
+        run: uvx mypy .
 
       - name: "Validate project metadata"
         run: uvx --from 'validate-pyproject[all,store]' validate-pyproject pyproject.toml
