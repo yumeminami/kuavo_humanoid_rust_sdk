@@ -17,6 +17,7 @@ runs:
       run: |
         if [ -d "kuavo_ws/src" ]; then
           cd kuavo_ws
+          . /opt/ros/noetic/setup.sh
           rosdep install --from-paths src --ignore-src -r -y
           catkin_make
         fi
